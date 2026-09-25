@@ -279,8 +279,8 @@ app.get('/api/store', async (req,res)=>{
       .map(it => ({
         id: it.id,
         categoryId: it.categoryId,
-        name: it.name,
-        description: it.description || '',
+        name: it.clientName || it.name,
+        description: it.clientDescription || it.description || '',
         value: it.value,
         image: it.clientImage || it.image || null,
         trending: !!it.tagTrending,

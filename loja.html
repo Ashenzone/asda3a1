@@ -80,12 +80,24 @@
     background:var(--white); border:1px solid var(--border); border-radius:8px;
     overflow:hidden; position:relative;
   }
-  /* modo animado: cards entram com fade+slide e imagem dá zoom no hover */
-  .mode-animado .card{opacity:0; transform:translateY(18px); transition:opacity .5s ease, transform .5s ease, box-shadow .2s ease;}
-  .mode-animado .card.in{opacity:1; transform:translateY(0);}
-  .mode-animado .card:hover{box-shadow:0 14px 30px rgba(169,129,47,0.18); border-color:var(--gold);}
-  .mode-animado .thumb img{transition:transform .5s ease;}
-  .mode-animado .card:hover .thumb img{transform:scale(1.08);}
+  /* modo animado: cards entram com fade+slide em onda (stagger) e imagem dá zoom + leve inclinação 3D no hover */
+  .mode-animado .card{
+    opacity:0; transform:translateY(26px) scale(.98);
+    transition:opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1), box-shadow .25s ease;
+    will-change:transform;
+  }
+  .mode-animado .card.in{opacity:1; transform:translateY(0) scale(1);}
+  .mode-animado .card.in:hover{transition:transform .12s ease, box-shadow .25s ease;}
+  .mode-animado .card:hover{box-shadow:0 18px 38px rgba(169,129,47,0.22); border-color:var(--gold);}
+  .mode-animado .thumb{position:relative;}
+  .mode-animado .thumb img{transition:transform .6s cubic-bezier(.16,1,.3,1);}
+  .mode-animado .card:hover .thumb img{transform:scale(1.1);}
+  .mode-animado .thumb::after{
+    content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
+    background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%);
+    transform:translateX(-120%); transition:transform .7s ease;
+  }
+  .mode-animado .card:hover .thumb::after{transform:translateX(120%);}
 
   /* modo minimalista: só a peça aumenta ao passar o mouse, sem mais nada */
   .mode-minimalista .card{border-color:var(--border);}
@@ -254,8 +266,8 @@
       return;
     }
     content.className = '';
-    content.innerHTML = `<div class="grid">${list.map(it => `
-      <div class="card" data-id="${it.id}">
+    content.innerHTML = `<div class="grid">${list.map((it,i) => `
+      <div class="card" data-id="${it.id}" ${storeMode==='animado' ? `style="transition-delay:${(i%10)*60}ms"` : ''}>
         <div class="thumb">
           ${badgesFor(it)}
           ${it.image ? `<img src="${it.image}" alt="${escapeHtml(it.name)}">` : `<span class="placeholder">Sem foto</span>`}
@@ -278,11 +290,32 @@
         const io = new IntersectionObserver(entries=>{
           entries.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
         }, { threshold:0.1 });
-        cards.forEach(c=> io.observe(c));
+        cards.forEach(c=>{
+          io.observe(c);
+          attachTilt(c);
+        });
       });
     } else {
       content.querySelectorAll('.card').forEach(c=> c.classList.add('in'));
     }
+  }
+
+  /* Leve inclinação 3D seguindo o cursor — só no modo Animado, e só em telas com mouse */
+  const hasHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  function attachTilt(card){
+    if(!hasHover) return;
+    const maxTilt = 6;
+    card.addEventListener('mousemove', (e)=>{
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
+      const rotY = (px - 0.5) * maxTilt * 2;
+      const rotX = (0.5 - py) * maxTilt * 2;
+      card.style.transform = `translateY(0) scale(1.015) perspective(700px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    });
+    card.addEventListener('mouseleave', ()=>{
+      card.style.transform = '';
+    });
   }
 
   function categoryName(catId){

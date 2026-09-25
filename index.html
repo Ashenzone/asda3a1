@@ -205,12 +205,13 @@
   .item-body .value{font-size:16px; font-weight:700; color:var(--gold-deep); font-family:'Cormorant Garamond',serif; font-size:21px;}
   .item-actions{display:flex; gap:8px; margin-top:auto; padding-top:6px;}
   .item-actions .btn{flex:1;}
-  .item-expand-btn svg{transition:transform .15s ease;}
-  .item-expand-btn.open svg{transform:rotate(90deg);}
-  .client-panel{
-    margin-top:10px; padding:14px; border-radius:12px; background:var(--gold-wash);
-    border:1px solid var(--gold-light); display:flex; flex-direction:column; gap:10px;
-  }
+
+  /* ---- abas Interno/Cliente no formulário de peça ---- */
+  .item-tabs{display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--border-c, #EDE6D6); padding-bottom:0;}
+  .item-tab-btn{flex:1; padding:10px 0; background:none; border:none; border-bottom:2px solid transparent; font-size:13.5px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:inherit;}
+  .item-tab-btn.active{color:var(--gold-deep); border-bottom-color:var(--gold-deep);}
+  .item-tab-panel{display:flex; flex-direction:column; gap:16px;}
+
   .client-toggle{display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:600; color:var(--ink); cursor:pointer;}
   .client-toggle input{width:17px; height:17px; accent-color:var(--gold-deep); cursor:pointer;}
   .client-image-choice{display:flex; flex-direction:column; gap:8px; padding-left:2px;}
@@ -229,6 +230,42 @@
   .client-tags-label{font-size:11.5px; color:var(--ink-soft); margin:0 0 2px; text-transform:uppercase; letter-spacing:.5px;}
   .tag-row{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink); cursor:pointer;}
   .tag-row input{width:15px; height:15px; accent-color:var(--gold-deep); cursor:pointer;}
+
+  /* ---- botão flutuante de pré-visualização (canto inferior direito) ---- */
+  .item-preview-fab{
+    position:fixed; bottom:22px; right:22px; z-index:1100; width:54px; height:54px; border-radius:50%;
+    border:none; background:linear-gradient(120deg,var(--gold-deep),var(--gold)); color:#fff;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow:0 10px 26px rgba(169,129,47,0.42); transition:transform .15s ease, filter .15s ease;
+  }
+  .item-preview-fab:hover{filter:brightness(1.08); transform:scale(1.05);}
+  .item-preview-fab:active{transform:scale(0.96);}
+
+  .preview-overlay-backdrop{
+    position:fixed; inset:0; background:rgba(20,17,12,0.6); z-index:1200;
+    display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn .15s ease;
+  }
+  .preview-overlay-card{
+    position:relative; background:#FBF9F5; border-radius:18px; padding:22px 18px 20px;
+    max-width:290px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,0.35);
+  }
+  .preview-overlay-label{font-size:10.5px; text-transform:uppercase; letter-spacing:1.2px; color:#9A9384; text-align:center; margin:0 0 14px; font-weight:700;}
+  .store-preview-card{background:#fff; border:1px solid #E7E1D3; border-radius:8px; overflow:hidden;}
+  .store-preview-thumb{width:100%; aspect-ratio:4/5; background:#EDEDED; position:relative; overflow:hidden;}
+  .store-preview-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .store-preview-badges{position:absolute; top:8px; left:8px; display:flex; flex-direction:column; gap:4px; z-index:2;}
+  .store-preview-badge{font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:100px; color:#fff;}
+  .store-preview-badge.trending{background:rgba(201,162,75,.92);}
+  .store-preview-badge.featured{background:rgba(36,34,32,.85); color:#EFDFB6;}
+  .store-preview-badge.lowstock{background:rgba(196,64,64,.9);}
+  .store-preview-body{padding:12px 14px 14px;}
+  .store-preview-name{font-family:'Cormorant Garamond',Georgia,serif; font-size:17px; font-weight:700; margin:0 0 4px; color:#242220;}
+  .store-preview-desc{font-size:11.5px; color:#8A8578; margin:0 0 10px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+  .store-preview-row{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .store-preview-price{font-family:'Cormorant Garamond',Georgia,serif; font-size:17px; color:#242220; font-weight:700;}
+  .store-preview-whats{font-size:10.5px; font-weight:700; color:#fff; background:linear-gradient(120deg,#A9812F,#C9A24B); padding:6px 11px; border-radius:100px; white-space:nowrap;}
+  .store-preview-hidden-note{text-align:center; font-size:11.5px; color:#B0442E; margin:12px 0 0; font-weight:600;}
+
 
   .delivery-card{
     background:var(--white); border:1px solid var(--border); border-radius:var(--radius);
@@ -531,7 +568,6 @@ let toastTimer = null;
 let salesFilterMode = 'tudo';     // hoje | semana | mes | ano | tudo
 let salesFilterDay = null;        // 'YYYY-MM-DD' ou null
 let appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado' };
-let expandedItemId = null; // peça com o painel "mostrar para o cliente" aberto
 
 function uid(prefix){ return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
@@ -951,58 +987,12 @@ function renderCategoriaDetail(catId){
                 <button class="btn btn-secondary btn-sm" data-action="edit-item" data-id="${it.id}" title="Editar">${ICONS.edit}</button>
                 <button class="btn btn-danger btn-sm" data-action="delete-item" data-id="${it.id}" title="Excluir">${ICONS.trash}</button>
                 <button class="btn btn-primary btn-sm" style="flex:1" data-action="forward-item" data-id="${it.id}">${ICONS.truck} Encaminhar</button>
-                <button class="icon-btn item-expand-btn ${expandedItemId===it.id?'open':''}" data-action="toggle-item-expand" data-id="${it.id}" title="Mostrar peça para o cliente">${ICONS.arrowRight}</button>
               </div>
-              ${expandedItemId === it.id ? renderClientPanel(it) : ''}
             </div>
           </div>
         `).join('')}
       </div>
     `}
-  `;
-}
-
-/* ---------- Painel: mostrar peça para o cliente ---------- */
-function renderClientPanel(it){
-  const usingCustom = !!it.clientImage;
-  return `
-    <div class="client-panel">
-      <label class="client-toggle">
-        <input type="checkbox" data-client-visible="${it.id}" ${it.visibleToClient ? 'checked' : ''}>
-        <span>Mostrar peça para o cliente</span>
-      </label>
-      <div class="client-image-choice" style="${it.visibleToClient ? '' : 'display:none'}">
-        <label class="radio-row">
-          <input type="radio" name="img-choice-${it.id}" data-client-img-choice="${it.id}" value="existing" ${!usingCustom ? 'checked' : ''}>
-          <span>Usar a foto que já está cadastrada na peça</span>
-        </label>
-        <label class="radio-row">
-          <input type="radio" name="img-choice-${it.id}" data-client-img-choice="${it.id}" value="custom" ${usingCustom ? 'checked' : ''}>
-          <span>Escolher outra foto só para o cliente ver</span>
-        </label>
-        <div class="client-image-upload" style="${usingCustom ? '' : 'display:none'}">
-          <label class="image-drop">
-            ${it.clientImage ? `<img src="${it.clientImage}" alt="">` : `<div>${ICONS.camera} Toque para escolher a foto</div>`}
-            <input type="file" accept="image/*" data-client-img-file="${it.id}">
-          </label>
-        </div>
-        <div class="client-tags">
-          <p class="client-tags-label">Destaques na loja (usados no modo minimalista)</p>
-          <label class="tag-row">
-            <input type="checkbox" data-tag="trending" data-tag-id="${it.id}" ${it.tagTrending ? 'checked' : ''}>
-            <span>🔥 Em alta</span>
-          </label>
-          <label class="tag-row">
-            <input type="checkbox" data-tag="featured" data-tag-id="${it.id}" ${it.tagFeatured ? 'checked' : ''}>
-            <span>⭐ Peça em destaque</span>
-          </label>
-          <label class="tag-row">
-            <input type="checkbox" data-tag="lowStock" data-tag-id="${it.id}" ${it.tagLowStock ? 'checked' : ''}>
-            <span>⚠️ Quase fora de estoque</span>
-          </label>
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -1253,38 +1243,98 @@ function modalCategoryForm(existing){
 
 /* ---- Modal: Adicionar / Editar peça ---- */
 let pendingImageData = null;
+let pendingClientImageData = null;
 function modalItemForm(catId, existing){
   pendingImageData = existing?.image || null;
+  pendingClientImageData = existing?.clientImage || null;
+  const visible = !!existing?.visibleToClient;
+  const usingCustom = !!existing?.clientImage;
   openModal(`
     <div class="modal-head"><h2>${existing ? 'Editar peça' : 'Adicionar peça'}</h2>
       <button class="modal-close" data-action="close-modal">${ICONS.x}</button></div>
     <div class="modal-body">
-      <div class="field">
-        <label>Imagem da peça</label>
-        <label class="image-drop" id="image-drop">
-          ${existing?.image ? `<img class="preview" id="img-preview" src="${existing.image}"><div class="preview-overlay">${ICONS.camera} Trocar imagem</div>` : `<div id="img-placeholder">${ICONS.image}<div style="margin-top:6px; font-size:13px;">Toque para escolher uma foto</div><div style="font-size:11.5px; margin-top:2px;">Galeria ou câmera do dispositivo</div></div>`}
-          <input type="file" id="f-item-image" accept="image/*">
-        </label>
+      <div class="item-tabs">
+        <button type="button" class="item-tab-btn active" data-action="item-tab" data-tab="interno">Interno</button>
+        <button type="button" class="item-tab-btn" data-action="item-tab" data-tab="cliente">Cliente</button>
       </div>
-      <div class="field">
-        <label>Nome da peça</label>
-        <input type="text" id="f-item-name" placeholder="Ex: Vestido midi floral" value="${existing ? escapeHtml(existing.name) : ''}" maxlength="60">
-      </div>
-      <div class="field">
-        <label>Descrição</label>
-        <textarea id="f-item-desc" placeholder="Detalhes, tamanho, tecido, estado da peça...">${existing ? escapeHtml(existing.description) : ''}</textarea>
-      </div>
-      <div style="display:flex; gap:14px;">
-        <div class="field" style="flex:1;">
-          <label>Valor</label>
-          <div class="value-input-wrap">
-            <span class="prefix">R$</span>
-            <input type="number" id="f-item-value" min="0" step="0.01" placeholder="0,00" value="${existing ? existing.value : ''}">
+
+      <div class="item-tab-panel" id="tab-interno">
+        <div class="field">
+          <label>Imagem da peça (uso interno / estoque)</label>
+          <label class="image-drop" id="image-drop">
+            ${existing?.image ? `<img class="preview" id="img-preview" src="${existing.image}"><div class="preview-overlay">${ICONS.camera} Trocar imagem</div>` : `<div id="img-placeholder">${ICONS.image}<div style="margin-top:6px; font-size:13px;">Toque para escolher uma foto</div><div style="font-size:11.5px; margin-top:2px;">Galeria ou câmera do dispositivo</div></div>`}
+            <input type="file" id="f-item-image" accept="image/*">
+          </label>
+        </div>
+        <div class="field">
+          <label>Nome da peça</label>
+          <input type="text" id="f-item-name" placeholder="Ex: Vestido midi floral" value="${existing ? escapeHtml(existing.name) : ''}" maxlength="60">
+        </div>
+        <div class="field">
+          <label>Descrição</label>
+          <textarea id="f-item-desc" placeholder="Detalhes, tamanho, tecido, estado da peça...">${existing ? escapeHtml(existing.description) : ''}</textarea>
+        </div>
+        <div style="display:flex; gap:14px;">
+          <div class="field" style="flex:1;">
+            <label>Valor</label>
+            <div class="value-input-wrap">
+              <span class="prefix">R$</span>
+              <input type="number" id="f-item-value" min="0" step="0.01" placeholder="0,00" value="${existing ? existing.value : ''}">
+            </div>
+          </div>
+          <div class="field" style="width:110px;">
+            <label>Quantidade</label>
+            <input type="number" id="f-item-qty" min="1" step="1" value="${existing ? (existing.quantity ?? 1) : 1}">
           </div>
         </div>
-        <div class="field" style="width:110px;">
-          <label>Quantidade</label>
-          <input type="number" id="f-item-qty" min="1" step="1" value="${existing ? (existing.quantity ?? 1) : 1}">
+      </div>
+
+      <div class="item-tab-panel" id="tab-cliente" style="display:none;">
+        <label class="client-toggle">
+          <input type="checkbox" id="f-item-client-visible" ${visible ? 'checked' : ''}>
+          <span>Mostrar peça para o cliente (aparece na loja pública)</span>
+        </label>
+        <div class="client-image-choice" id="client-fields" style="${visible ? '' : 'display:none'}">
+          <div class="field">
+            <label>Nome para o cliente <span style="font-weight:400; color:var(--ink-soft);">(opcional — se vazio, usa o nome interno)</span></label>
+            <input type="text" id="f-item-client-name" placeholder="${existing ? escapeHtml(existing.name) : 'Nome que aparece na loja'}" value="${existing?.clientName ? escapeHtml(existing.clientName) : ''}" maxlength="60">
+          </div>
+          <div class="field">
+            <label>Descrição para o cliente <span style="font-weight:400; color:var(--ink-soft);">(opcional)</span></label>
+            <textarea id="f-item-client-desc" placeholder="${existing ? escapeHtml(existing.description||'') : 'Descrição que aparece na loja'}">${existing?.clientDescription ? escapeHtml(existing.clientDescription) : ''}</textarea>
+          </div>
+          <div class="field">
+            <label>Foto usada na loja</label>
+            <label class="radio-row">
+              <input type="radio" name="client-img-choice" id="f-item-client-img-existing" value="existing" ${!usingCustom ? 'checked' : ''}>
+              <span>Usar a mesma foto interna da peça</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="client-img-choice" id="f-item-client-img-custom" value="custom" ${usingCustom ? 'checked' : ''}>
+              <span>Escolher outra foto só para o cliente ver</span>
+            </label>
+            <div class="client-image-upload" id="client-image-upload-wrap" style="${usingCustom ? '' : 'display:none'}">
+              <label class="image-drop" id="client-image-drop">
+                ${existing?.clientImage ? `<img src="${existing.clientImage}" alt="">` : `<div>${ICONS.camera} Toque para escolher a foto</div>`}
+                <input type="file" id="f-item-client-image" accept="image/*">
+              </label>
+            </div>
+          </div>
+          <div class="client-tags">
+            <p class="client-tags-label">Destaques na loja</p>
+            <label class="tag-row">
+              <input type="checkbox" id="f-item-tag-trending" ${existing?.tagTrending ? 'checked' : ''}>
+              <span>🔥 Em alta</span>
+            </label>
+            <label class="tag-row">
+              <input type="checkbox" id="f-item-tag-featured" ${existing?.tagFeatured ? 'checked' : ''}>
+              <span>⭐ Peça em destaque</span>
+            </label>
+            <label class="tag-row">
+              <input type="checkbox" id="f-item-tag-lowstock" ${existing?.tagLowStock ? 'checked' : ''}>
+              <span>⚠️ Quase fora de estoque</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -1292,7 +1342,9 @@ function modalItemForm(catId, existing){
       <button class="btn btn-primary btn-block" data-action="save-item" data-cat="${catId}" data-id="${existing ? existing.id : ''}">${ICONS.check} ${existing ? 'Salvar alterações' : 'Salvar peça'}</button>
       ${existing ? `<button class="btn btn-secondary btn-block" data-action="forward-item" data-id="${existing.id}">${ICONS.truck} Encaminhar para entrega</button>` : ''}
     </div>
+    <button type="button" class="item-preview-fab" data-action="preview-client-view" title="Ver como o cliente vê">${ICONS.arrowRight}</button>
   `);
+
   document.getElementById('f-item-image').addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
@@ -1302,7 +1354,85 @@ function modalItemForm(catId, existing){
     drop.innerHTML = `<img class="preview" id="img-preview" src="${dataUrl}"><div class="preview-overlay">${ICONS.camera} Trocar imagem</div><input type="file" id="f-item-image" accept="image/*">`;
     document.getElementById('f-item-image').addEventListener('change', arguments.callee);
   });
+
+  document.getElementById('f-item-client-visible').addEventListener('change', (e)=>{
+    document.getElementById('client-fields').style.display = e.target.checked ? '' : 'none';
+  });
+
+  document.querySelectorAll('input[name="client-img-choice"]').forEach(radio=>{
+    radio.addEventListener('change', (e)=>{
+      document.getElementById('client-image-upload-wrap').style.display = e.target.value === 'custom' ? '' : 'none';
+      if(e.target.value === 'existing') pendingClientImageData = null;
+    });
+  });
+
+  const clientImgInput = document.getElementById('f-item-client-image');
+  if(clientImgInput){
+    clientImgInput.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const dataUrl = await processImageFile(file);
+      pendingClientImageData = dataUrl;
+      const drop = document.getElementById('client-image-drop');
+      drop.innerHTML = `<img src="${dataUrl}" alt=""><input type="file" id="f-item-client-image" accept="image/*">`;
+      document.getElementById('f-item-client-image').addEventListener('change', arguments.callee);
+    });
+  }
 }
+
+/* ---- Aba interno/cliente + pré-visualização "como o cliente vê" ---- */
+function showClientPreview(){
+  const nameField = document.getElementById('f-item-name');
+  if(!nameField) return;
+  const internalName = nameField.value.trim();
+  const internalDesc = document.getElementById('f-item-desc').value.trim();
+  const clientName = document.getElementById('f-item-client-name')?.value.trim() || '';
+  const clientDesc = document.getElementById('f-item-client-desc')?.value.trim() || '';
+  const value = parseFloat(document.getElementById('f-item-value').value) || 0;
+  const visible = document.getElementById('f-item-client-visible')?.checked;
+  const trending = document.getElementById('f-item-tag-trending')?.checked;
+  const featured = document.getElementById('f-item-tag-featured')?.checked;
+  const lowStock = document.getElementById('f-item-tag-lowstock')?.checked;
+  const useCustom = document.getElementById('f-item-client-img-custom')?.checked;
+  const image = useCustom ? (pendingClientImageData || pendingImageData) : pendingImageData;
+
+  const name = clientName || internalName || 'Peça sem nome';
+  const desc = clientDesc || internalDesc;
+
+  const badges = [];
+  if(trending) badges.push(`<span class="store-preview-badge trending">🔥 Em alta</span>`);
+  if(featured) badges.push(`<span class="store-preview-badge featured">⭐ Destaque</span>`);
+  if(lowStock) badges.push(`<span class="store-preview-badge lowstock">⚠️ Últimas peças</span>`);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'preview-overlay-backdrop';
+  overlay.id = 'client-preview-backdrop';
+  overlay.innerHTML = `
+    <div class="preview-overlay-card">
+      <button type="button" class="modal-close" id="close-client-preview" style="position:absolute; top:10px; right:10px;">${ICONS.x}</button>
+      <p class="preview-overlay-label">Assim o cliente vê na loja</p>
+      <div class="store-preview-card">
+        <div class="store-preview-thumb">
+          ${badges.length ? `<div class="store-preview-badges">${badges.join('')}</div>` : ''}
+          ${image ? `<img src="${image}" alt="">` : ''}
+        </div>
+        <div class="store-preview-body">
+          <p class="store-preview-name">${escapeHtml(name)}</p>
+          ${desc ? `<p class="store-preview-desc">${escapeHtml(desc)}</p>` : ''}
+          <div class="store-preview-row">
+            <span class="store-preview-price">${fmtMoney(value)}</span>
+            <span class="store-preview-whats">WhatsApp</span>
+          </div>
+        </div>
+      </div>
+      ${!visible ? `<p class="store-preview-hidden-note">Esta peça ainda não aparece na loja — marque "Mostrar peça para o cliente" na aba Cliente.</p>` : ''}
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('mousedown', (e)=>{ if(e.target === overlay) overlay.remove(); });
+  document.getElementById('close-client-preview').addEventListener('click', ()=> overlay.remove());
+}
+
 
 /* ---- Modal: Encaminhar para entrega ---- */
 function modalDeliveryForm(item){
@@ -1434,9 +1564,15 @@ document.addEventListener('click', async (e)=>{
 
   else if(action === 'edit-item') modalItemForm(null, items.find(i=>i.id===t.dataset.id));
 
-  else if(action === 'toggle-item-expand'){
-    expandedItemId = expandedItemId === t.dataset.id ? null : t.dataset.id;
-    render();
+  else if(action === 'item-tab'){
+    const tab = t.dataset.tab;
+    document.querySelectorAll('.item-tab-btn').forEach(b=> b.classList.toggle('active', b.dataset.tab===tab));
+    document.getElementById('tab-interno').style.display = tab==='interno' ? '' : 'none';
+    document.getElementById('tab-cliente').style.display = tab==='cliente' ? '' : 'none';
+  }
+
+  else if(action === 'preview-client-view'){
+    showClientPreview();
   }
 
   else if(action === 'save-item'){
@@ -1445,10 +1581,23 @@ document.addEventListener('click', async (e)=>{
     const value = parseFloat(document.getElementById('f-item-value').value) || 0;
     const quantity = Math.max(1, parseInt(document.getElementById('f-item-qty').value) || 1);
     if(!name){ toast('Digite o nome da peça', ICONS.alertTriangle); return; }
+
+    const visibleToClient = !!document.getElementById('f-item-client-visible')?.checked;
+    const clientName = document.getElementById('f-item-client-name')?.value.trim() || '';
+    const clientDescription = document.getElementById('f-item-client-desc')?.value.trim() || '';
+    const useCustomClientImg = !!document.getElementById('f-item-client-img-custom')?.checked;
+    const clientImage = useCustomClientImg ? (pendingClientImageData || null) : null;
+    const tagTrending = !!document.getElementById('f-item-tag-trending')?.checked;
+    const tagFeatured = !!document.getElementById('f-item-tag-featured')?.checked;
+    const tagLowStock = !!document.getElementById('f-item-tag-lowstock')?.checked;
+
     const id = t.dataset.id;
     if(id){
       const it = items.find(i=>i.id===id);
       it.name = name; it.description = description; it.value = value; it.quantity = quantity; it.image = pendingImageData;
+      it.visibleToClient = visibleToClient;
+      it.clientName = clientName; it.clientDescription = clientDescription; it.clientImage = clientImage;
+      it.tagTrending = tagTrending; it.tagFeatured = tagFeatured; it.tagLowStock = tagLowStock;
       toast('Peça atualizada');
     } else {
       items.push({
@@ -1459,11 +1608,8 @@ document.addEventListener('click', async (e)=>{
         image: pendingImageData,
         status: 'in_category',
         delivery: null,
-        visibleToClient: false,
-        clientImage: null,
-        tagTrending: false,
-        tagFeatured: false,
-        tagLowStock: false
+        visibleToClient, clientName, clientDescription, clientImage,
+        tagTrending, tagFeatured, tagLowStock
       });
       toast('Peça adicionada');
     }
@@ -1582,57 +1728,6 @@ document.addEventListener('click', async (e)=>{
     await saveCategories(); await saveItems();
     toast('Dados reiniciados');
     closeModal(); setView('inicio');
-  }
-});
-
-document.addEventListener('change', async (e)=>{
-  const cv = e.target.closest('[data-client-visible]');
-  if(cv){
-    const it = items.find(i=>i.id===cv.dataset.clientVisible);
-    if(!it) return;
-    it.visibleToClient = cv.checked;
-    try{ await saveItems(); }catch(err){ return; }
-    toast(cv.checked ? 'Peça agora aparece na loja' : 'Peça removida da loja');
-    render();
-    return;
-  }
-
-  const choice = e.target.closest('[data-client-img-choice]');
-  if(choice){
-    const it = items.find(i=>i.id===choice.dataset.clientImgChoice);
-    if(!it) return;
-    if(choice.value === 'existing' && it.clientImage){
-      it.clientImage = null;
-      try{ await saveItems(); }catch(err){ return; }
-      toast('Usando a foto normal da peça');
-    }
-    render();
-    return;
-  }
-
-  const tagInput = e.target.closest('[data-tag]');
-  if(tagInput){
-    const it = items.find(i=>i.id===tagInput.dataset.tagId);
-    if(!it) return;
-    const field = { trending:'tagTrending', featured:'tagFeatured', lowStock:'tagLowStock' }[tagInput.dataset.tag];
-    if(!field) return;
-    it[field] = tagInput.checked;
-    try{ await saveItems(); }catch(err){ return; }
-    render();
-    return;
-  }
-
-  const fileInput = e.target.closest('[data-client-img-file]');
-  if(fileInput){
-    const it = items.find(i=>i.id===fileInput.dataset.clientImgFile);
-    if(!it) return;
-    const file = fileInput.files[0];
-    if(!file) return;
-    const dataUrl = await processImageFile(file);
-    it.clientImage = dataUrl;
-    try{ await saveItems(); }catch(err){ return; }
-    toast('Foto do cliente atualizada');
-    render();
   }
 });
 
