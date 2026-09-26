@@ -56,10 +56,12 @@ const DEFAULT_ANIMATIONS = {
   loadingScreen: false,
   assemblyIntro: false,
   assemblyImage: null,
+  assemblyVideo: null,
   cardStagger: true,
   hoverTilt: false,
   parallax: false,
   shine: false,
+  neon: false,
   speed: 1,
   intensity: 1
 };
@@ -72,9 +74,12 @@ function sanitizeAnimations(input){
     return Math.min(max, Math.max(min, n));
   };
   const presets = ['padrao','elegante','premium','cinematico','ultra','minimalista','personalizado'];
-  // aceita a imagem de montagem só se for mesmo uma data URI de imagem e não passar de ~4.5MB em base64
+  // aceita a imagem/vídeo de montagem só se forem mesmo uma data URI do tipo certo e dentro de um tamanho razoável
   const img = typeof a.assemblyImage === 'string' && a.assemblyImage.startsWith('data:image/') && a.assemblyImage.length < 4_500_000
     ? a.assemblyImage
+    : null;
+  const vid = typeof a.assemblyVideo === 'string' && a.assemblyVideo.startsWith('data:video/') && a.assemblyVideo.length < 9_000_000
+    ? a.assemblyVideo
     : null;
   return {
     preset: presets.includes(a.preset) ? a.preset : DEFAULT_ANIMATIONS.preset,
@@ -82,10 +87,12 @@ function sanitizeAnimations(input){
     loadingScreen: bool(a.loadingScreen, DEFAULT_ANIMATIONS.loadingScreen),
     assemblyIntro: bool(a.assemblyIntro, DEFAULT_ANIMATIONS.assemblyIntro),
     assemblyImage: img,
+    assemblyVideo: vid,
     cardStagger: bool(a.cardStagger, DEFAULT_ANIMATIONS.cardStagger),
     hoverTilt: bool(a.hoverTilt, DEFAULT_ANIMATIONS.hoverTilt),
     parallax: bool(a.parallax, DEFAULT_ANIMATIONS.parallax),
     shine: bool(a.shine, DEFAULT_ANIMATIONS.shine),
+    neon: bool(a.neon, DEFAULT_ANIMATIONS.neon),
     speed: clamp(a.speed, 0.4, 2, DEFAULT_ANIMATIONS.speed),
     intensity: clamp(a.intensity, 0.4, 2, DEFAULT_ANIMATIONS.intensity)
   };

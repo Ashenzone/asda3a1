@@ -576,16 +576,16 @@ let salesFilterMode = 'tudo';     // hoje | semana | mes | ano | tudo
 let salesFilterDay = null;        // 'YYYY-MM-DD' ou null
 let appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado', animations: null };
 const DEFAULT_ANIMATIONS = {
-  preset: 'padrao', enabled: true, loadingScreen: false, assemblyIntro: false,
-  cardStagger: true, hoverTilt: false, parallax: false, shine: false, speed: 1, intensity: 1
+  preset: 'padrao', enabled: true, loadingScreen: false, assemblyIntro: false, assemblyImage: null, assemblyVideo: null,
+  cardStagger: true, hoverTilt: false, parallax: false, shine: false, neon: false, speed: 1, intensity: 1
 };
 const ANIMATION_PRESETS = {
-  padrao:       { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:true,  hoverTilt:false, parallax:false, shine:false, speed:1,   intensity:1   },
-  elegante:     { enabled:true, loadingScreen:true,  assemblyIntro:false, cardStagger:true,  hoverTilt:true,  parallax:false, shine:true,  speed:0.9, intensity:0.8 },
-  premium:      { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:1,   intensity:1   },
-  cinematico:   { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:0.7, intensity:1.3 },
-  ultra:        { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:1.3, intensity:1.4 },
-  minimalista:  { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:false, hoverTilt:false, parallax:false, shine:false, speed:1,   intensity:0.6 }
+  padrao:       { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:true,  hoverTilt:false, parallax:false, shine:false, neon:false, speed:1,   intensity:1   },
+  elegante:     { enabled:true, loadingScreen:true,  assemblyIntro:false, cardStagger:true,  hoverTilt:true,  parallax:false, shine:true,  neon:false, speed:0.9, intensity:0.8 },
+  premium:      { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  neon:true,  speed:1,   intensity:1   },
+  cinematico:   { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  neon:true,  speed:0.7, intensity:1.3 },
+  ultra:        { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  neon:true,  speed:1.3, intensity:1.4 },
+  minimalista:  { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:false, hoverTilt:false, parallax:false, shine:false, neon:false, speed:1,   intensity:0.6 }
 };
 
 function uid(prefix){ return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -822,6 +822,14 @@ function toast(msg, icon){
 }
 
 /* Redimensiona a imagem antes de salvar, para manter o armazenamento leve */
+function readFileAsDataURL(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=> resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 function processImageFile(file){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
@@ -1222,7 +1230,7 @@ function renderConfiguracoes(){
 
     <div class="settings-card">
       <h3>Animações da loja</h3>
-      <p class="desc">Ajuste fino de tudo que se move na vitrine (funciona junto com o modo acima — mais forte no modo Animado).</p>
+      <p class="desc">Escolha um ponto de partida e depois ajuste tudo abaixo do seu jeito — mudar qualquer opção passa o modo pra "Personalizado" automaticamente.</p>
       <div class="theme-grid">
         ${[
           ['padrao','Padrão'],['elegante','Elegante'],['premium','Premium'],
@@ -1237,23 +1245,30 @@ function renderConfiguracoes(){
       </div>
 
       <div class="field" style="margin-top:16px;">
-        <label>Foto usada na animação de montagem <span style="font-weight:400; color:var(--ink-soft);">(opcional — sem foto, usa a camisa dourada padrão)</span></label>
+        <label>Montagem ao carregar a loja <span style="font-weight:400; color:var(--ink-soft);">(escolha uma — vídeo tem prioridade sobre foto)</span></label>
         <label class="image-drop" id="assembly-image-drop" style="height:130px;">
-          ${animations.assemblyImage ? `<img class="preview" src="${animations.assemblyImage}"><div class="preview-overlay">${ICONS.camera} Trocar foto</div>` : `<div>${ICONS.camera}<div style="margin-top:6px; font-size:13px;">Escolher uma foto de qualquer peça</div></div>`}
+          ${animations.assemblyImage ? `<img class="preview" src="${animations.assemblyImage}"><div class="preview-overlay">${ICONS.camera} Trocar foto</div>` : `<div>${ICONS.camera}<div style="margin-top:6px; font-size:13px;">Foto de qualquer peça (efeito quebra-cabeça)</div></div>`}
           <input type="file" id="anim-assembly-image-input" accept="image/*">
         </label>
         ${animations.assemblyImage ? `<button type="button" class="btn btn-secondary btn-sm" id="anim-assembly-image-remove" style="margin-top:8px;">${ICONS.trash} Remover foto</button>` : ''}
+
+        <label class="image-drop" id="assembly-video-drop" style="height:100px; margin-top:10px;">
+          ${animations.assemblyVideo ? `<div style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink);">▶ Vídeo escolhido<div class="preview-overlay">Trocar vídeo</div></div>` : `<div>🎬<div style="margin-top:6px; font-size:13px;">Ou um vídeo curto (sem áudio) de até ~6MB</div></div>`}
+          <input type="file" id="anim-assembly-video-input" accept="video/*">
+        </label>
+        ${animations.assemblyVideo ? `<button type="button" class="btn btn-secondary btn-sm" id="anim-assembly-video-remove" style="margin-top:8px;">${ICONS.trash} Remover vídeo</button>` : ''}
       </div>
 
-      <div id="anim-custom-panel" style="${animations.preset==='personalizado' ? 'margin-top:16px;' : 'display:none; margin-top:16px;'}">
-        <label class="tag-row"><input type="checkbox" id="anim-loadingScreen" ${animations.loadingScreen?'checked':''}><span>Tela de carregamento premium</span></label>
+      <div id="anim-custom-panel" style="margin-top:16px;">
+        <label class="tag-row"><input type="checkbox" id="anim-loadingScreen" ${animations.loadingScreen?'checked':''}><span>Tela de carregamento premium (em tela cheia)</span></label>
         <label class="tag-row"><input type="checkbox" id="anim-assemblyIntro" ${animations.assemblyIntro?'checked':''}><span>Animação de montagem ao abrir a loja</span></label>
         <label class="tag-row"><input type="checkbox" id="anim-cardStagger" ${animations.cardStagger?'checked':''}><span>Peças entrando em sequência</span></label>
         <label class="tag-row"><input type="checkbox" id="anim-hoverTilt" ${animations.hoverTilt?'checked':''}><span>Inclinação 3D ao passar o mouse</span></label>
         <label class="tag-row"><input type="checkbox" id="anim-parallax" ${animations.parallax?'checked':''}><span>Efeito parallax sutil</span></label>
         <label class="tag-row"><input type="checkbox" id="anim-shine" ${animations.shine?'checked':''}><span>Brilho passando sobre as fotos</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-neon" ${animations.neon?'checked':''}><span>✨ Neon dourado girando ao redor das peças</span></label>
         <div class="field" style="margin-top:10px;">
-          <label>Velocidade <span style="font-weight:400; color:var(--ink-soft);">(<span id="anim-speed-val">${animations.speed}</span>x)</span></label>
+          <label>Velocidade <span style="font-weight:400; color:var(--ink-soft);">(<span id="anim-speed-val">${animations.speed}</span>x — controla a esteira, os cards e a montagem)</span></label>
           <input type="range" id="anim-speed" min="0.4" max="2" step="0.1" value="${animations.speed}" style="width:100%;">
         </div>
         <div class="field">
@@ -1579,12 +1594,15 @@ function attachViewHandlers(){
       colorInput.addEventListener('change', async (e)=>{ appSettings.customColor = e.target.value; await saveSettings(); });
     }
 
+    const markCustomized = ()=>{ appSettings.animations = { ...appSettings.animations, preset: 'personalizado' }; };
+
     const assemblyImgInput = document.getElementById('anim-assembly-image-input');
     if(assemblyImgInput){
       assemblyImgInput.addEventListener('change', async (e)=>{
         const file = e.target.files[0];
         if(!file) return;
         const dataUrl = await processImageFile(file);
+        markCustomized();
         appSettings.animations = { ...appSettings.animations, assemblyImage: dataUrl };
         await saveSettings();
         toast('Foto da montagem atualizada');
@@ -1592,18 +1610,46 @@ function attachViewHandlers(){
       });
     }
     document.getElementById('anim-assembly-image-remove')?.addEventListener('click', async ()=>{
+      markCustomized();
       appSettings.animations = { ...appSettings.animations, assemblyImage: null };
       await saveSettings();
       toast('Voltou pra camisa padrão');
       render();
     });
 
+    const assemblyVidInput = document.getElementById('anim-assembly-video-input');
+    if(assemblyVidInput){
+      assemblyVidInput.addEventListener('change', async (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        if(file.size > 7 * 1024 * 1024){
+          toast('Vídeo muito grande — use um de até ~6-7MB', ICONS.alertTriangle);
+          e.target.value = '';
+          return;
+        }
+        const dataUrl = await readFileAsDataURL(file);
+        markCustomized();
+        appSettings.animations = { ...appSettings.animations, assemblyVideo: dataUrl };
+        await saveSettings();
+        toast('Vídeo da montagem atualizado');
+        render();
+      });
+    }
+    document.getElementById('anim-assembly-video-remove')?.addEventListener('click', async ()=>{
+      markCustomized();
+      appSettings.animations = { ...appSettings.animations, assemblyVideo: null };
+      await saveSettings();
+      toast('Vídeo removido');
+      render();
+    });
+
     const animCheckboxIds = {
       'anim-loadingScreen':'loadingScreen', 'anim-assemblyIntro':'assemblyIntro', 'anim-cardStagger':'cardStagger',
-      'anim-hoverTilt':'hoverTilt', 'anim-parallax':'parallax', 'anim-shine':'shine'
+      'anim-hoverTilt':'hoverTilt', 'anim-parallax':'parallax', 'anim-shine':'shine', 'anim-neon':'neon'
     };
     Object.entries(animCheckboxIds).forEach(([id,field])=>{
       document.getElementById(id)?.addEventListener('change', async (e)=>{
+        markCustomized();
         appSettings.animations = { ...appSettings.animations, [field]: e.target.checked };
         await saveSettings();
       });
@@ -1612,6 +1658,7 @@ function attachViewHandlers(){
     if(speedInput){
       speedInput.addEventListener('input', (e)=>{ document.getElementById('anim-speed-val').textContent = e.target.value; });
       speedInput.addEventListener('change', async (e)=>{
+        markCustomized();
         appSettings.animations = { ...appSettings.animations, speed: parseFloat(e.target.value) };
         await saveSettings();
       });
@@ -1620,6 +1667,7 @@ function attachViewHandlers(){
     if(intensityInput){
       intensityInput.addEventListener('input', (e)=>{ document.getElementById('anim-intensity-val').textContent = e.target.value; });
       intensityInput.addEventListener('change', async (e)=>{
+        markCustomized();
         appSettings.animations = { ...appSettings.animations, intensity: parseFloat(e.target.value) };
         await saveSettings();
       });
