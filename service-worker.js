@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jr-admin-shell-v1';
+const CACHE_NAME = 'jr-admin-shell-v2';
 const APP_SHELL = [
   '/admin',
   '/index.html',
@@ -10,7 +10,13 @@ const APP_SHELL = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
+      .then(cache => Promise.allSettled(
+        // cacheia cada arquivo individualmente: se um faltar (404, rede),
+        // não derruba o service worker inteiro como o addAll() fazia
+        APP_SHELL.map(url => cache.add(url).catch(err => {
+          console.warn('JR IMPORTADOS SW: não foi possível pré-cachear', url, err);
+        }))
+      ))
       .then(() => self.skipWaiting())
   );
 });

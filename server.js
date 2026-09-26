@@ -50,7 +50,49 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 let pgPool = null;
-let localState = { categories: [], items: [], history: [], blockedEmails: [], settings: { theme:'padrao', customColor:'#B08D57', storeMode:'animado' } };
+const DEFAULT_ANIMATIONS = {
+  preset: 'padrao',
+  enabled: true,
+  loadingScreen: false,
+  assemblyIntro: false,
+  assemblyImage: null,
+  cardStagger: true,
+  hoverTilt: false,
+  parallax: false,
+  shine: false,
+  speed: 1,
+  intensity: 1
+};
+function sanitizeAnimations(input){
+  const a = (input && typeof input === 'object') ? input : {};
+  const bool = (v, fallback) => typeof v === 'boolean' ? v : fallback;
+  const clamp = (v, min, max, fallback) => {
+    const n = Number(v);
+    if(!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  const presets = ['padrao','elegante','premium','cinematico','ultra','minimalista','personalizado'];
+  // aceita a imagem de montagem só se for mesmo uma data URI de imagem e não passar de ~4.5MB em base64
+  const img = typeof a.assemblyImage === 'string' && a.assemblyImage.startsWith('data:image/') && a.assemblyImage.length < 4_500_000
+    ? a.assemblyImage
+    : null;
+  return {
+    preset: presets.includes(a.preset) ? a.preset : DEFAULT_ANIMATIONS.preset,
+    enabled: bool(a.enabled, DEFAULT_ANIMATIONS.enabled),
+    loadingScreen: bool(a.loadingScreen, DEFAULT_ANIMATIONS.loadingScreen),
+    assemblyIntro: bool(a.assemblyIntro, DEFAULT_ANIMATIONS.assemblyIntro),
+    assemblyImage: img,
+    cardStagger: bool(a.cardStagger, DEFAULT_ANIMATIONS.cardStagger),
+    hoverTilt: bool(a.hoverTilt, DEFAULT_ANIMATIONS.hoverTilt),
+    parallax: bool(a.parallax, DEFAULT_ANIMATIONS.parallax),
+    shine: bool(a.shine, DEFAULT_ANIMATIONS.shine),
+    speed: clamp(a.speed, 0.4, 2, DEFAULT_ANIMATIONS.speed),
+    intensity: clamp(a.intensity, 0.4, 2, DEFAULT_ANIMATIONS.intensity)
+  };
+}
+const DEFAULT_SETTINGS = { theme:'padrao', customColor:'#B08D57', storeMode:'animado', animations: DEFAULT_ANIMATIONS };
+
+let localState = { categories: [], items: [], history: [], blockedEmails: [], settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) };
 
 /* Gera uma imagem de exemplo (gradiente + marca "JR") em SVG, sem depender
    de internet — usada só nas peças de demonstração criadas no primeiro
@@ -137,7 +179,7 @@ async function initDb(){
         );
       `);
       const rs = await pgPool.query('SELECT id FROM app_settings WHERE id=1');
-      if(!rs.rowCount){ await pgPool.query('INSERT INTO app_settings(id,data) VALUES(1,$1)',[JSON.stringify({ theme:'padrao', customColor:'#B08D57', storeMode:'animado' })]); }
+      if(!rs.rowCount){ await pgPool.query('INSERT INTO app_settings(id,data) VALUES(1,$1)',[JSON.stringify(DEFAULT_SETTINGS)]); }
     }catch(settingsErr){
       console.error('Aviso: não foi possível preparar a tabela de aparência (app_settings). O restante do sistema continua funcionando normalmente.', settingsErr);
     }
@@ -148,7 +190,8 @@ async function initDb(){
     if(!Array.isArray(localState.items)) localState.items=[];
     if(!Array.isArray(localState.history)) localState.history=[];
     if(!Array.isArray(localState.blockedEmails)) localState.blockedEmails=[];
-    if(!localState.settings || typeof localState.settings !== 'object') localState.settings = { theme:'padrao', customColor:'#B08D57', storeMode:'animado' };
+    if(!localState.settings || typeof localState.settings !== 'object') localState.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    else if(!localState.settings.animations) localState.settings.animations = JSON.parse(JSON.stringify(DEFAULT_ANIMATIONS));
     saveLocal();
     console.log('Sem DATABASE_URL: usando data.json apenas para testes locais.');
   }
@@ -239,13 +282,18 @@ app.post('/api/blocked-emails', requireAdmin, async (req,res)=>{
 
 app.get('/api/settings', requireAdmin, async (req,res)=>{
   try{
-    if(pgPool){ const r=await pgPool.query('SELECT data FROM app_settings WHERE id=1'); return res.json(r.rows[0]?.data || { theme:'padrao', customColor:'#B08D57', storeMode:'animado' }); }
-    res.json(localState.settings || { theme:'padrao', customColor:'#B08D57', storeMode:'animado' });
+    if(pgPool){ const r=await pgPool.query('SELECT data FROM app_settings WHERE id=1'); return res.json(r.rows[0]?.data || DEFAULT_SETTINGS); }
+    res.json(localState.settings || DEFAULT_SETTINGS);
   }catch(e){ res.status(500).json({error:'Erro ao carregar configurações'}); }
 });
 app.put('/api/settings', requireAdmin, async (req,res)=>{
   try{
-    const data = { theme: String(req.body.theme || 'padrao'), customColor: String(req.body.customColor || '#B08D57'), storeMode: ['padrao','animado','minimalista'].includes(req.body.storeMode) ? req.body.storeMode : 'animado' };
+    const data = {
+      theme: String(req.body.theme || 'padrao'),
+      customColor: String(req.body.customColor || '#B08D57'),
+      storeMode: ['padrao','animado','minimalista'].includes(req.body.storeMode) ? req.body.storeMode : 'animado',
+      animations: sanitizeAnimations(req.body.animations)
+    };
     if(pgPool) await pgPool.query('UPDATE app_settings SET data=$1, updated_at=NOW() WHERE id=1',[JSON.stringify(data)]);
     else { localState.settings = data; saveLocal(); }
     res.json({ok:true, ...data});
@@ -291,6 +339,7 @@ app.get('/api/store', async (req,res)=>{
     res.json({
       storeName: 'JR IMPORTADOS',
       storeMode: ['padrao','animado','minimalista'].includes(settings.storeMode) ? settings.storeMode : 'animado',
+      animations: sanitizeAnimations(settings.animations),
       categories: catsInUse,
       items: visible
     });

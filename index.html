@@ -265,6 +265,13 @@
   .store-preview-price{font-family:'Cormorant Garamond',Georgia,serif; font-size:17px; color:#242220; font-weight:700;}
   .store-preview-whats{font-size:10.5px; font-weight:700; color:#fff; background:linear-gradient(120deg,#A9812F,#C9A24B); padding:6px 11px; border-radius:100px; white-space:nowrap;}
   .store-preview-hidden-note{text-align:center; font-size:11.5px; color:#B0442E; margin:12px 0 0; font-weight:600;}
+  .preview-device-toggle{display:flex; gap:6px; justify-content:center; margin-bottom:14px;}
+  .device-btn{border:1px solid var(--border-c,#E7E1D3); background:#fff; border-radius:100px; padding:6px 13px; font-size:12.5px; cursor:pointer; color:var(--ink-soft); font-family:inherit; font-weight:600;}
+  .device-btn.active{background:var(--gold-deep); border-color:var(--gold-deep); color:#fff;}
+  .preview-overlay-card.desktop-mode{max-width:480px;}
+  .preview-overlay-card.desktop-mode .store-preview-card{display:flex; flex-direction:row;}
+  .preview-overlay-card.desktop-mode .store-preview-thumb{width:44%; flex:none; aspect-ratio:auto;}
+  .preview-overlay-card.desktop-mode .store-preview-body{flex:1;}
 
 
   .delivery-card{
@@ -567,7 +574,19 @@ let currentCategoryId = null;
 let toastTimer = null;
 let salesFilterMode = 'tudo';     // hoje | semana | mes | ano | tudo
 let salesFilterDay = null;        // 'YYYY-MM-DD' ou null
-let appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado' };
+let appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado', animations: null };
+const DEFAULT_ANIMATIONS = {
+  preset: 'padrao', enabled: true, loadingScreen: false, assemblyIntro: false,
+  cardStagger: true, hoverTilt: false, parallax: false, shine: false, speed: 1, intensity: 1
+};
+const ANIMATION_PRESETS = {
+  padrao:       { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:true,  hoverTilt:false, parallax:false, shine:false, speed:1,   intensity:1   },
+  elegante:     { enabled:true, loadingScreen:true,  assemblyIntro:false, cardStagger:true,  hoverTilt:true,  parallax:false, shine:true,  speed:0.9, intensity:0.8 },
+  premium:      { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:1,   intensity:1   },
+  cinematico:   { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:0.7, intensity:1.3 },
+  ultra:        { enabled:true, loadingScreen:true,  assemblyIntro:true,  cardStagger:true,  hoverTilt:true,  parallax:true,  shine:true,  speed:1.3, intensity:1.4 },
+  minimalista:  { enabled:true, loadingScreen:false, assemblyIntro:false, cardStagger:false, hoverTilt:false, parallax:false, shine:false, speed:1,   intensity:0.6 }
+};
 
 function uid(prefix){ return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
@@ -625,9 +644,14 @@ async function saveItems(){ return saveState(); }
 async function loadSettings(){
   try{
     const data = await api('/api/settings');
-    appSettings = { theme: data.theme || 'padrao', customColor: data.customColor || '#B08D57', storeMode: data.storeMode || 'animado' };
+    appSettings = {
+      theme: data.theme || 'padrao',
+      customColor: data.customColor || '#B08D57',
+      storeMode: data.storeMode || 'animado',
+      animations: { ...DEFAULT_ANIMATIONS, ...(data.animations || {}) }
+    };
   }catch(e){
-    appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado' };
+    appSettings = { theme: 'padrao', customColor: '#B08D57', storeMode: 'animado', animations: { ...DEFAULT_ANIMATIONS } };
   }
   applyTheme();
 }
@@ -1116,6 +1140,7 @@ async function loadHistory(){
 
 /* ---------- Configurações ---------- */
 function renderConfiguracoes(){
+  const animations = appSettings.animations || DEFAULT_ANIMATIONS;
   return `
     <div class="view-header">
       <div><h1>Configurações</h1><p>Gerencie categorias e preferências do sistema.</p></div>
@@ -1193,6 +1218,51 @@ function renderConfiguracoes(){
         <b>Animado:</b> visual com animações e as peças deslizando na tela.<br>
         <b>Minimalista:</b> visual limpo, só a peça aumenta ao passar o mouse — usa os destaques (em alta, em destaque, quase fora de estoque) marcados em cada peça.
       </p>
+    </div>
+
+    <div class="settings-card">
+      <h3>Animações da loja</h3>
+      <p class="desc">Ajuste fino de tudo que se move na vitrine (funciona junto com o modo acima — mais forte no modo Animado).</p>
+      <div class="theme-grid">
+        ${[
+          ['padrao','Padrão'],['elegante','Elegante'],['premium','Premium'],
+          ['cinematico','Cinemático'],['ultra','Ultra Animado'],['minimalista','Minimalista'],
+          ['personalizado','Personalizado']
+        ].map(([key,label]) => `
+          <div class="theme-opt ${animations.preset===key?'active':''}" data-action="set-anim-preset" data-preset="${key}">
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#C9A24B,#242220);"></div>
+            <span>${label}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="field" style="margin-top:16px;">
+        <label>Foto usada na animação de montagem <span style="font-weight:400; color:var(--ink-soft);">(opcional — sem foto, usa a camisa dourada padrão)</span></label>
+        <label class="image-drop" id="assembly-image-drop" style="height:130px;">
+          ${animations.assemblyImage ? `<img class="preview" src="${animations.assemblyImage}"><div class="preview-overlay">${ICONS.camera} Trocar foto</div>` : `<div>${ICONS.camera}<div style="margin-top:6px; font-size:13px;">Escolher uma foto de qualquer peça</div></div>`}
+          <input type="file" id="anim-assembly-image-input" accept="image/*">
+        </label>
+        ${animations.assemblyImage ? `<button type="button" class="btn btn-secondary btn-sm" id="anim-assembly-image-remove" style="margin-top:8px;">${ICONS.trash} Remover foto</button>` : ''}
+      </div>
+
+      <div id="anim-custom-panel" style="${animations.preset==='personalizado' ? 'margin-top:16px;' : 'display:none; margin-top:16px;'}">
+        <label class="tag-row"><input type="checkbox" id="anim-loadingScreen" ${animations.loadingScreen?'checked':''}><span>Tela de carregamento premium</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-assemblyIntro" ${animations.assemblyIntro?'checked':''}><span>Animação de montagem ao abrir a loja</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-cardStagger" ${animations.cardStagger?'checked':''}><span>Peças entrando em sequência</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-hoverTilt" ${animations.hoverTilt?'checked':''}><span>Inclinação 3D ao passar o mouse</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-parallax" ${animations.parallax?'checked':''}><span>Efeito parallax sutil</span></label>
+        <label class="tag-row"><input type="checkbox" id="anim-shine" ${animations.shine?'checked':''}><span>Brilho passando sobre as fotos</span></label>
+        <div class="field" style="margin-top:10px;">
+          <label>Velocidade <span style="font-weight:400; color:var(--ink-soft);">(<span id="anim-speed-val">${animations.speed}</span>x)</span></label>
+          <input type="range" id="anim-speed" min="0.4" max="2" step="0.1" value="${animations.speed}" style="width:100%;">
+        </div>
+        <div class="field">
+          <label>Intensidade <span style="font-weight:400; color:var(--ink-soft);">(<span id="anim-intensity-val">${animations.intensity}</span>x)</span></label>
+          <input type="range" id="anim-intensity" min="0.4" max="2" step="0.1" value="${animations.intensity}" style="width:100%;">
+        </div>
+      </div>
+
+      <a href="/" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-top:14px; display:inline-flex; text-decoration:none;">👁 Pré-visualizar loja</a>
     </div>
 
     <div class="settings-card">
@@ -1408,9 +1478,13 @@ function showClientPreview(){
   overlay.className = 'preview-overlay-backdrop';
   overlay.id = 'client-preview-backdrop';
   overlay.innerHTML = `
-    <div class="preview-overlay-card">
+    <div class="preview-overlay-card" id="preview-overlay-card">
       <button type="button" class="modal-close" id="close-client-preview" style="position:absolute; top:10px; right:10px;">${ICONS.x}</button>
       <p class="preview-overlay-label">Assim o cliente vê na loja</p>
+      <div class="preview-device-toggle">
+        <button type="button" class="device-btn active" data-device="mobile">📱 Celular</button>
+        <button type="button" class="device-btn" data-device="desktop">💻 Computador</button>
+      </div>
       <div class="store-preview-card">
         <div class="store-preview-thumb">
           ${badges.length ? `<div class="store-preview-badges">${badges.join('')}</div>` : ''}
@@ -1431,6 +1505,12 @@ function showClientPreview(){
   document.body.appendChild(overlay);
   overlay.addEventListener('mousedown', (e)=>{ if(e.target === overlay) overlay.remove(); });
   document.getElementById('close-client-preview').addEventListener('click', ()=> overlay.remove());
+  overlay.querySelectorAll('.device-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      overlay.querySelectorAll('.device-btn').forEach(b=> b.classList.toggle('active', b===btn));
+      document.getElementById('preview-overlay-card').classList.toggle('desktop-mode', btn.dataset.device==='desktop');
+    });
+  });
 }
 
 
@@ -1497,6 +1577,52 @@ function attachViewHandlers(){
     if(colorInput){
       colorInput.addEventListener('input', (e)=> applyCustomColor(e.target.value));
       colorInput.addEventListener('change', async (e)=>{ appSettings.customColor = e.target.value; await saveSettings(); });
+    }
+
+    const assemblyImgInput = document.getElementById('anim-assembly-image-input');
+    if(assemblyImgInput){
+      assemblyImgInput.addEventListener('change', async (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const dataUrl = await processImageFile(file);
+        appSettings.animations = { ...appSettings.animations, assemblyImage: dataUrl };
+        await saveSettings();
+        toast('Foto da montagem atualizada');
+        render();
+      });
+    }
+    document.getElementById('anim-assembly-image-remove')?.addEventListener('click', async ()=>{
+      appSettings.animations = { ...appSettings.animations, assemblyImage: null };
+      await saveSettings();
+      toast('Voltou pra camisa padrão');
+      render();
+    });
+
+    const animCheckboxIds = {
+      'anim-loadingScreen':'loadingScreen', 'anim-assemblyIntro':'assemblyIntro', 'anim-cardStagger':'cardStagger',
+      'anim-hoverTilt':'hoverTilt', 'anim-parallax':'parallax', 'anim-shine':'shine'
+    };
+    Object.entries(animCheckboxIds).forEach(([id,field])=>{
+      document.getElementById(id)?.addEventListener('change', async (e)=>{
+        appSettings.animations = { ...appSettings.animations, [field]: e.target.checked };
+        await saveSettings();
+      });
+    });
+    const speedInput = document.getElementById('anim-speed');
+    if(speedInput){
+      speedInput.addEventListener('input', (e)=>{ document.getElementById('anim-speed-val').textContent = e.target.value; });
+      speedInput.addEventListener('change', async (e)=>{
+        appSettings.animations = { ...appSettings.animations, speed: parseFloat(e.target.value) };
+        await saveSettings();
+      });
+    }
+    const intensityInput = document.getElementById('anim-intensity');
+    if(intensityInput){
+      intensityInput.addEventListener('input', (e)=>{ document.getElementById('anim-intensity-val').textContent = e.target.value; });
+      intensityInput.addEventListener('change', async (e)=>{
+        appSettings.animations = { ...appSettings.animations, intensity: parseFloat(e.target.value) };
+        await saveSettings();
+      });
     }
   }
   if(currentView === 'historico') loadHistory();
@@ -1707,6 +1833,17 @@ document.addEventListener('click', async (e)=>{
     await saveSettings();
     render();
     toast('Modo da loja atualizado');
+  }
+
+  else if(action === 'set-anim-preset'){
+    const preset = t.dataset.preset;
+    appSettings.animations = { ...appSettings.animations, preset };
+    if(preset !== 'personalizado' && ANIMATION_PRESETS[preset]){
+      appSettings.animations = { ...appSettings.animations, ...ANIMATION_PRESETS[preset], preset };
+    }
+    await saveSettings();
+    render();
+    toast('Animações atualizadas');
   }
 
   else if(action === 'do-logout'){
