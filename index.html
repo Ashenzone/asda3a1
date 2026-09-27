@@ -295,7 +295,7 @@
   .field{margin-bottom:18px;}
   .field label{display:block; font-size:13px; font-weight:600; color:var(--ink); margin-bottom:7px;}
   .field .hint{font-size:11.5px; color:var(--ink-soft); margin-top:5px;}
-  input[type="text"], input[type="number"], input[type="date"], textarea, select{
+  input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select{
     width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border);
     background:var(--white); font-size:14.5px; font-family:inherit; color:var(--ink);
     transition:border-color .15s ease, box-shadow .15s ease;
@@ -315,6 +315,7 @@
     min-height:150px;
   }
   .image-drop:hover{border-color:var(--gold); background:var(--gold-wash); color:var(--gold-deep);}
+  .upload-loading{font-size:13px; color:var(--gold-deep); display:flex; align-items:center; gap:8px;}
   .image-drop .preview{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
   .image-drop .preview-overlay{
     position:absolute; inset:0; background:rgba(39,34,32,0.45); color:var(--white);
@@ -829,6 +830,13 @@ function readFileAsDataURL(file){
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+/* Manda a imagem/vídeo (já em base64) pro backend, que valida e guarda no
+   Cloudflare R2 (ou no banco, se o R2 ainda não estiver configurado) e
+   devolve a URL final a ser salva na peça/configuração. */
+async function uploadMedia(dataUri, folder){
+  const data = await api('/api/admin/upload', { method:'POST', body: JSON.stringify({ dataUri, folder }) });
+  return data.url;
 }
 function processImageFile(file){
   return new Promise((resolve, reject)=>{
@@ -1433,10 +1441,17 @@ function modalItemForm(catId, existing){
   document.getElementById('f-item-image').addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    const dataUrl = await processImageFile(file);
-    pendingImageData = dataUrl;
     const drop = document.getElementById('image-drop');
-    drop.innerHTML = `<img class="preview" id="img-preview" src="${dataUrl}"><div class="preview-overlay">${ICONS.camera} Trocar imagem</div><input type="file" id="f-item-image" accept="image/*">`;
+    drop.innerHTML = `<div class="upload-loading">${ICONS.camera} Enviando imagem...</div>`;
+    try{
+      const compressed = await processImageFile(file);
+      const url = await uploadMedia(compressed, 'products');
+      pendingImageData = url;
+      drop.innerHTML = `<img class="preview" id="img-preview" src="${url}"><div class="preview-overlay">${ICONS.camera} Trocar imagem</div><input type="file" id="f-item-image" accept="image/*">`;
+    }catch(err){
+      toast(err.message || 'Falha ao enviar a imagem', ICONS.alertTriangle);
+      drop.innerHTML = `<div id="img-placeholder">${ICONS.image}<div style="margin-top:6px; font-size:13px;">Toque para escolher uma foto</div></div><input type="file" id="f-item-image" accept="image/*">`;
+    }
     document.getElementById('f-item-image').addEventListener('change', arguments.callee);
   });
 
@@ -1456,10 +1471,17 @@ function modalItemForm(catId, existing){
     clientImgInput.addEventListener('change', async (e)=>{
       const file = e.target.files[0];
       if(!file) return;
-      const dataUrl = await processImageFile(file);
-      pendingClientImageData = dataUrl;
       const drop = document.getElementById('client-image-drop');
-      drop.innerHTML = `<img src="${dataUrl}" alt=""><input type="file" id="f-item-client-image" accept="image/*">`;
+      drop.innerHTML = `<div class="upload-loading">${ICONS.camera} Enviando foto...</div>`;
+      try{
+        const compressed = await processImageFile(file);
+        const url = await uploadMedia(compressed, 'client-photos');
+        pendingClientImageData = url;
+        drop.innerHTML = `<img src="${url}" alt=""><input type="file" id="f-item-client-image" accept="image/*">`;
+      }catch(err){
+        toast(err.message || 'Falha ao enviar a foto', ICONS.alertTriangle);
+        drop.innerHTML = `<div>${ICONS.camera} Toque para escolher a foto</div><input type="file" id="f-item-client-image" accept="image/*">`;
+      }
       document.getElementById('f-item-client-image').addEventListener('change', arguments.callee);
     });
   }
@@ -1578,6 +1600,42 @@ function modalConfirm({title, message, confirmLabel, onConfirmAction, danger}){
   `);
 }
 
+/* Confirmação extra por senha, para ações destrutivas (ex: limpar todos os dados).
+   Exige digitar a senha de administrador de novo, verificada no servidor. */
+function modalPasswordConfirm({ title, message, confirmLabel, onVerified }){
+  openModal(`
+    <div class="modal-body" style="padding-top:26px; text-align:center;">
+      <div class="confirm-icon">${ICONS.alertTriangle}</div>
+      <h2 style="margin-bottom:8px;">${escapeHtml(title)}</h2>
+      <p style="color:var(--ink-soft); font-size:14px; margin:0 0 16px;">${escapeHtml(message)}</p>
+      <input type="password" id="confirm-password-input" placeholder="Senha de administrador" autocomplete="current-password">
+      <p class="gate-error" id="confirm-password-error"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost btn-block" data-action="close-modal">Cancelar</button>
+      <button class="btn btn-danger-solid btn-block" id="confirm-password-btn">${escapeHtml(confirmLabel)}</button>
+    </div>
+  `);
+  const input = document.getElementById('confirm-password-input');
+  input.focus();
+  const go = async ()=>{
+    const val = input.value;
+    const errEl = document.getElementById('confirm-password-error');
+    if(!val){ errEl.textContent = 'Digite a senha.'; return; }
+    const btn = document.getElementById('confirm-password-btn');
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    try{
+      await api('/api/admin/verify-password', { method:'POST', body: JSON.stringify({ password: val }) });
+      await onVerified();
+    }catch(e){
+      errEl.textContent = e.message || 'Senha incorreta.';
+      btn.disabled = false; btn.textContent = confirmLabel;
+    }
+  };
+  document.getElementById('confirm-password-btn').addEventListener('click', go);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') go(); });
+}
+
 /* =========================================================
    AÇÕES (event delegation)
    ========================================================= */
@@ -1601,12 +1659,17 @@ function attachViewHandlers(){
       assemblyImgInput.addEventListener('change', async (e)=>{
         const file = e.target.files[0];
         if(!file) return;
-        const dataUrl = await processImageFile(file);
-        markCustomized();
-        appSettings.animations = { ...appSettings.animations, assemblyImage: dataUrl };
-        await saveSettings();
-        toast('Foto da montagem atualizada');
-        render();
+        try{
+          const compressed = await processImageFile(file);
+          const url = await uploadMedia(compressed, 'site-intro');
+          markCustomized();
+          appSettings.animations = { ...appSettings.animations, assemblyImage: url };
+          await saveSettings();
+          toast('Foto da montagem atualizada');
+          render();
+        }catch(err){
+          toast(err.message || 'Falha ao enviar a foto', ICONS.alertTriangle);
+        }
       });
     }
     document.getElementById('anim-assembly-image-remove')?.addEventListener('click', async ()=>{
@@ -1627,12 +1690,18 @@ function attachViewHandlers(){
           e.target.value = '';
           return;
         }
-        const dataUrl = await readFileAsDataURL(file);
-        markCustomized();
-        appSettings.animations = { ...appSettings.animations, assemblyVideo: dataUrl };
-        await saveSettings();
-        toast('Vídeo da montagem atualizado');
-        render();
+        toast('Enviando vídeo...');
+        try{
+          const raw = await readFileAsDataURL(file);
+          const url = await uploadMedia(raw, 'site-intro');
+          markCustomized();
+          appSettings.animations = { ...appSettings.animations, assemblyVideo: url };
+          await saveSettings();
+          toast('Vídeo da montagem atualizado');
+          render();
+        }catch(err){
+          toast(err.message || 'Falha ao enviar o vídeo', ICONS.alertTriangle);
+        }
       });
     }
     document.getElementById('anim-assembly-video-remove')?.addEventListener('click', async ()=>{
@@ -1905,14 +1974,21 @@ document.addEventListener('click', async (e)=>{
 
   else if(action === 'reset-all'){
     confirmContext = { type:'reset' };
-    modalConfirm({ title:'Limpar todos os dados?', message:'Todas as categorias e peças serão apagadas permanentemente.', confirmLabel:'Limpar tudo', onConfirmAction:'do-reset-all', danger:true });
+    modalConfirm({ title:'Limpar todos os dados?', message:'Todas as categorias e peças serão apagadas permanentemente. Na próxima tela, confirme com a senha de administrador.', confirmLabel:'Continuar', onConfirmAction:'ask-reset-password', danger:true });
   }
-  else if(action === 'do-reset-all'){
-    categories = [{ id: DEFAULT_CATEGORY_ID, name: 'Vendas para Entregar', createdAt: Date.now() }];
-    items = [];
-    await saveCategories(); await saveItems();
-    toast('Dados reiniciados');
-    closeModal(); setView('inicio');
+  else if(action === 'ask-reset-password'){
+    modalPasswordConfirm({
+      title:'Confirme a senha',
+      message:'Por segurança, digite de novo a senha de administrador pra apagar todos os dados.',
+      confirmLabel:'Apagar tudo',
+      onVerified: async ()=>{
+        categories = [{ id: DEFAULT_CATEGORY_ID, name: 'Vendas para Entregar', createdAt: Date.now() }];
+        items = [];
+        await saveCategories(); await saveItems();
+        toast('Dados reiniciados');
+        closeModal(); setView('inicio');
+      }
+    });
   }
 });
 

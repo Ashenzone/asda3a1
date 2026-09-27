@@ -86,9 +86,19 @@
   .assembly-stage.puzzle-mode.run .puzzle-piece{opacity:1; transform:translate(0,0) rotate(0deg) scale(1);}
 
   /* montagem em vídeo, quando o admin escolhe um vídeo curto */
-  .assembly-stage.video-mode{width:min(80vw,520px); height:min(60vh,460px); border-radius:16px; overflow:hidden; box-shadow:0 24px 54px rgba(20,17,12,0.24); opacity:0; transform:scale(.94); transition:opacity calc(.6s / var(--anim-speed)) ease, transform calc(.6s / var(--anim-speed)) cubic-bezier(.16,1,.3,1);}
-  .assembly-stage.video-mode.run{opacity:1; transform:scale(1);}
+  /* montagem em vídeo: cobre a tela inteira de verdade, não importa a resolução do aparelho */
+  .assembly-stage.video-mode{
+    position:fixed; inset:0; width:100vw; height:100vh; margin:0; border-radius:0; box-shadow:none;
+    opacity:0; transform:none; z-index:0;
+    transition:opacity calc(.6s / var(--anim-speed)) ease;
+  }
+  .assembly-stage.video-mode.run{opacity:1;}
   .assembly-stage.video-mode video{width:100%; height:100%; object-fit:cover; display:block;}
+  /* texto/barra de progresso continuam legíveis por cima do vídeo */
+  .loading-inner{position:relative; z-index:1;}
+  .loading-brand, .loading-progress, .loading-label{position:relative; z-index:1;}
+  .loading-screen.video-bg .loading-brand, .loading-screen.video-bg .loading-label{text-shadow:0 2px 14px rgba(0,0,0,.65);}
+  .loading-screen.video-bg .loading-progress{background:rgba(255,255,255,.3);}
 
   header{
     position:sticky; top:0; z-index:20;
@@ -374,6 +384,7 @@
   function setupAssemblyStage(){
     const stage = document.getElementById('assembly-stage');
     stage.classList.remove('puzzle-mode', 'video-mode');
+    document.getElementById('loading-screen')?.classList.toggle('video-bg', !!anim.assemblyVideo);
     if(anim.assemblyVideo){
       stage.classList.add('video-mode');
       stage.innerHTML = `<video src="${anim.assemblyVideo}" muted autoplay loop playsinline></video>`;

@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
@@ -10,6 +11,92 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const localFile = path.join(__dirname, 'data.json');
 const DEFAULT_CATEGORY_ID = 'cat-vendas-entregar';
+
+/* =========================================================
+   CLOUDFLARE R2 — armazenamento de arquivos pesados
+   (fotos, foto do cliente, vídeo/foto de montagem do loading)
+   O PostgreSQL continua guardando só texto/números/URLs.
+   Se as variáveis do R2 não estiverem configuradas, o sistema
+   continua funcionando como antes (guarda a imagem/vídeo direto
+   no banco) — nada quebra enquanto o R2 não é configurado.
+   ========================================================= */
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/+$/, ''); // sem barra no final
+
+const R2_ENABLED = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME && R2_PUBLIC_URL);
+
+let s3Client = null;
+if(R2_ENABLED){
+  const { S3Client } = require('@aws-sdk/client-s3');
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY }
+  });
+  console.log('Cloudflare R2 configurado — novos uploads de mídia vão para o bucket', R2_BUCKET_NAME);
+} else {
+  console.log('Aviso: variáveis do R2 não configuradas. Uploads de mídia continuam sendo salvos direto no banco (modo antigo) até o R2 ser configurado.');
+}
+
+// Tipos aceitos e seus "números mágicos" (assinatura real dos bytes), para não
+// confiar só na extensão/Content-Type que o navegador informou.
+const MAGIC_SIGNATURES = [
+  { mime: 'image/jpeg', bytes: [0xFF, 0xD8, 0xFF] },
+  { mime: 'image/png', bytes: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] },
+  { mime: 'image/gif', bytes: [0x47, 0x49, 0x46, 0x38] },
+  { mime: 'image/webp', bytes: [0x52, 0x49, 0x46, 0x46], offsetCheck: (buf) => buf.slice(8, 12).toString('ascii') === 'WEBP' },
+  { mime: 'video/mp4', bytes: [], offsetCheck: (buf) => buf.slice(4, 8).toString('ascii') === 'ftyp' },
+  { mime: 'video/webm', bytes: [0x1A, 0x45, 0xDF, 0xA3] },
+];
+function sniffMime(buffer){
+  for(const sig of MAGIC_SIGNATURES){
+    const matchesBytes = sig.bytes.length === 0 || sig.bytes.every((b, i) => buffer[i] === b);
+    const matchesOffset = !sig.offsetCheck || sig.offsetCheck(buffer);
+    if(matchesBytes && matchesOffset) return sig.mime;
+  }
+  return null;
+}
+
+function parseDataUri(dataUri){
+  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUri || '');
+  if(!m) return null;
+  return { declaredMime: m[1], buffer: Buffer.from(m[2], 'base64') };
+}
+
+const MAX_UPLOAD_BYTES = { image: 6 * 1024 * 1024, video: 9 * 1024 * 1024 };
+const EXT_BY_MIME = { 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/webp':'webp', 'video/mp4':'mp4', 'video/webm':'webm' };
+const ALLOWED_FOLDERS = { products:'products', 'client-photos':'products', 'site-intro':'site/intro', videos:'videos' };
+
+async function uploadToR2(buffer, mime, folderKey){
+  const folder = ALLOWED_FOLDERS[folderKey] || 'misc';
+  const ext = EXT_BY_MIME[mime] || 'bin';
+  // nome de arquivo único e sem qualquer dado vindo do cliente, evitando path traversal ou nomes maliciosos
+  const key = `${folder}/${Date.now().toString(36)}-${crypto.randomBytes(10).toString('hex')}.${ext}`;
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  await s3Client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME, Key: key, Body: buffer, ContentType: mime, CacheControl: 'public, max-age=31536000, immutable'
+  }));
+  return `${R2_PUBLIC_URL}/${key}`;
+}
+
+function r2KeyFromUrl(url){
+  if(!R2_ENABLED || typeof url !== 'string' || !url.startsWith(R2_PUBLIC_URL + '/')) return null;
+  return url.slice(R2_PUBLIC_URL.length + 1);
+}
+
+async function deleteFromR2IfHosted(url){
+  const key = r2KeyFromUrl(url);
+  if(!key) return; // não é uma URL do nosso R2 (pode ser data: antiga, ou vazia) — não mexe
+  try{
+    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    await s3Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+  }catch(err){
+    console.warn('Aviso: não foi possível remover do R2 o arquivo', key, err.message);
+  }
+}
 
 /* =========================================================
    AUTENTICAÇÃO DO ADMIN (JR IMPORTADOS)
@@ -47,6 +134,55 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error:'Senha incorreta.' });
   }
   res.json({ ok:true, token: issueToken() });
+});
+
+// Confirmação extra de senha para ações destrutivas (ex: "Limpar todos os dados").
+// Exige uma sessão de admin já válida (requireAdmin) E a senha digitada de novo.
+app.post('/api/admin/verify-password', requireAdmin, (req, res) => {
+  if(!ADMIN_PASSWORD){
+    return res.status(503).json({ error:'Senha não configurada no servidor.' });
+  }
+  const senha = String(req.body?.password || '');
+  if(senha !== ADMIN_PASSWORD){
+    return res.status(401).json({ error:'Senha incorreta.' });
+  }
+  res.json({ ok:true });
+});
+
+/* =========================================================
+   UPLOAD DE MÍDIA (fotos, vídeos) — vai para o Cloudflare R2
+   quando configurado; senão, devolve a própria imagem em base64
+   (comportamento antigo), pra nunca travar o painel.
+   Só admin autenticado pode chamar essa rota.
+   ========================================================= */
+app.post('/api/admin/upload', requireAdmin, async (req, res) => {
+  try{
+    const { dataUri, folder } = req.body || {};
+    const parsed = parseDataUri(dataUri);
+    if(!parsed) return res.status(400).json({ error:'Arquivo inválido.' });
+
+    const realMime = sniffMime(parsed.buffer);
+    if(!realMime) return res.status(400).json({ error:'Formato de arquivo não reconhecido ou não suportado.' });
+
+    const isVideo = realMime.startsWith('video/');
+    const maxBytes = isVideo ? MAX_UPLOAD_BYTES.video : MAX_UPLOAD_BYTES.image;
+    if(parsed.buffer.length > maxBytes){
+      return res.status(413).json({ error:`Arquivo muito grande (máximo ${Math.round(maxBytes/1024/1024)}MB).` });
+    }
+
+    if(!R2_ENABLED){
+      // R2 ainda não configurado: mantém o comportamento antigo (base64 direto),
+      // reconstruindo a data URI já validada, com o mime real detectado.
+      return res.json({ url: `data:${realMime};base64,${parsed.buffer.toString('base64')}`, storedIn:'database' });
+    }
+
+    const folderKey = ALLOWED_FOLDERS[folder] ? folder : 'products';
+    const url = await uploadToR2(parsed.buffer, realMime, folderKey);
+    res.json({ url, storedIn:'r2' });
+  }catch(e){
+    console.error('Erro no upload de mídia:', e);
+    res.status(500).json({ error:'Erro ao enviar o arquivo.' });
+  }
 });
 
 let pgPool = null;
@@ -224,6 +360,36 @@ function diffAndHistory(oldCats, newCats, oldItems, newItems, email){
   return events.map(e=>({...e,admin_email:email,created_at:new Date().toISOString()}));
 }
 
+/* Depois de salvar, apaga do R2 as fotos que ficaram órfãs (peça excluída ou
+   foto trocada por outra) — só se não estiverem mais em uso por nenhuma peça.
+   Roda em segundo plano (não atrasa nem arrisca a resposta ao admin). */
+function cleanupOrphanedMedia(events, newItems){
+  if(!R2_ENABLED) return;
+  try{
+    const stillInUse = new Set();
+    for(const it of newItems || []){
+      if(it.image) stillInUse.add(it.image);
+      if(it.clientImage) stillInUse.add(it.clientImage);
+    }
+    const candidates = new Set();
+    for(const e of events){
+      if(e.type !== 'peça') continue;
+      if(e.action === 'EXCLUÍDO' && e.old){
+        if(e.old.image) candidates.add(e.old.image);
+        if(e.old.clientImage) candidates.add(e.old.clientImage);
+      } else if(e.action === 'ALTERADO' && e.old && e.new){
+        if(e.old.image && e.old.image !== e.new.image) candidates.add(e.old.image);
+        if(e.old.clientImage && e.old.clientImage !== e.new.clientImage) candidates.add(e.old.clientImage);
+      }
+    }
+    for(const url of candidates){
+      if(!stillInUse.has(url)) deleteFromR2IfHosted(url);
+    }
+  }catch(err){
+    console.warn('Aviso: falha ao verificar mídias órfãs no R2', err.message);
+  }
+}
+
 app.get('/api/state', requireAdmin, async (req,res)=>{
   try{
     if(pgPool){ const r=await pgPool.query('SELECT categories,items FROM store_state WHERE id=1'); return res.json(r.rows[0]); }
@@ -246,11 +412,13 @@ app.put('/api/state', requireAdmin, async (req,res)=>{
         await client.query('UPDATE store_state SET categories=$1,items=$2,updated_at=NOW() WHERE id=1',[JSON.stringify(categories),JSON.stringify(items)]);
         for(const e of events) await client.query('INSERT INTO audit_history(admin_email,action,entity_type,entity_id,entity_name,old_data,new_data,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[e.admin_email,e.action,e.type,e.id,e.name,e.old?JSON.stringify(e.old):null,e.new?JSON.stringify(e.new):null,e.created_at]);
         await client.query('COMMIT');
+        cleanupOrphanedMedia(events, items);
         return res.json({ok:true,changes:events.length});
       }catch(e){ await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     }
     const events=diffAndHistory(localState.categories,categories,localState.items,items,email);
     localState.categories=categories; localState.items=items; localState.history.unshift(...events); localState.history=localState.history.slice(0,2000); saveLocal();
+    cleanupOrphanedMedia(events, items);
     res.json({ok:true,changes:events.length});
   }catch(e){ console.error(e); res.status(500).json({error:'Erro ao salvar no banco'}); }
 });
@@ -301,8 +469,20 @@ app.put('/api/settings', requireAdmin, async (req,res)=>{
       storeMode: ['padrao','animado','minimalista'].includes(req.body.storeMode) ? req.body.storeMode : 'animado',
       animations: sanitizeAnimations(req.body.animations)
     };
-    if(pgPool) await pgPool.query('UPDATE app_settings SET data=$1, updated_at=NOW() WHERE id=1',[JSON.stringify(data)]);
-    else { localState.settings = data; saveLocal(); }
+    let oldAnimations = null;
+    if(pgPool){
+      const prev = await pgPool.query('SELECT data FROM app_settings WHERE id=1');
+      oldAnimations = prev.rows[0]?.data?.animations || null;
+      await pgPool.query('UPDATE app_settings SET data=$1, updated_at=NOW() WHERE id=1',[JSON.stringify(data)]);
+    } else {
+      oldAnimations = localState.settings?.animations || null;
+      localState.settings = data; saveLocal();
+    }
+    // se a foto/vídeo de montagem foi trocado ou removido, limpa a versão antiga do R2
+    if(oldAnimations){
+      if(oldAnimations.assemblyImage && oldAnimations.assemblyImage !== data.animations.assemblyImage) deleteFromR2IfHosted(oldAnimations.assemblyImage);
+      if(oldAnimations.assemblyVideo && oldAnimations.assemblyVideo !== data.animations.assemblyVideo) deleteFromR2IfHosted(oldAnimations.assemblyVideo);
+    }
     res.json({ok:true, ...data});
   }catch(e){ res.status(500).json({error:'Erro ao salvar configurações'}); }
 });
